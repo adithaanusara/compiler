@@ -174,12 +174,17 @@ static int parseFactor(Parser *P) {
   if (t.type == IDENTIFIER) {
     int idx = findVariable(t.text);
     if (idx == -1) die(t.line, "Semantic error: variable used before declaration");
-
-    
+    if (!variables[idx].hasValue) die(t.line, "Semantic error: variable used before assignment");
 
     int v = variables[idx].value;
     expect(P, IDENTIFIER, "Expected identifier");
     return v;
+  }
+
+  /* Unary minus, e.g. -5 or -(x + 1) */
+  if (t.type == MINUS) {
+    expect(P, MINUS, "Expected '-'");
+    return -parseFactor(P);
   }
 
   if (t.type == LPAREN) {
@@ -198,12 +203,13 @@ static int parseTerm(Parser *P) {
 
   while (P->current.type == MUL || P->current.type == DIV) {
     TokenType op = P->current.type;
+    int opLine = P->current.line;
     expect(P, op, "Expected * or /");
     int right = parseFactor(P);
 
     if (op == MUL) left = left * right;
     else {
-      if (right == 0) die(P->current.line, "Semantic error: division by zero");
+      if (right == 0) die(opLine, "Semantic error: division by zero");
       left = left / right;
     }
   }
@@ -304,15 +310,16 @@ static char *readFile(const char *path) {
   FILE *f = fopen(path, "rb");
   if (!f) return NULL;
 
-  fseek(f, 0, SEEK_END);
+  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
   long size = ftell(f);
-  fseek(f, 0, SEEK_SET);
+  if (size < 0) { fclose(f); return NULL; }
+  rewind(f);
 
   char *buffer = (char *)malloc((size_t)size + 1);
   if (!buffer) { fclose(f); return NULL; }
 
-  fread(buffer, 1, (size_t)size, f);
-  buffer[size] = '\0';
+  size_t got = fread(buffer, 1, (size_t)size, f);
+  buffer[got] = '\0';
   fclose(f);
   return buffer;
 }
